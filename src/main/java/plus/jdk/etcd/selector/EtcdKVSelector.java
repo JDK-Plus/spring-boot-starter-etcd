@@ -11,6 +11,7 @@ import org.springframework.lang.NonNullApi;
 import org.springframework.web.context.support.WebApplicationObjectSupport;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import plus.jdk.etcd.common.DefaultConfigAdaptor;
+import plus.jdk.etcd.common.DefaultEtcdNodePostProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
 import plus.jdk.etcd.global.EtcdNodeDelegateService;
 import plus.jdk.etcd.global.EtcdPlusService;
@@ -23,6 +24,11 @@ public class EtcdKVSelector extends WebApplicationObjectSupport implements BeanF
     @Bean
     DefaultConfigAdaptor getIConfigAdaptor() {
         return new DefaultConfigAdaptor();
+    }
+
+    @Bean
+    DefaultEtcdNodePostProcessor getDefaultEtcdNodePostProcessor() {
+        return new DefaultEtcdNodePostProcessor();
     }
 
     @Bean

@@ -1,6 +1,7 @@
 package plus.jdk.etcd.global;
 
 import io.etcd.jetcd.Watch;
+import io.etcd.jetcd.watch.WatchEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import plus.jdk.etcd.annotation.EtcdNode;
+import plus.jdk.etcd.common.IEtcdNodePostProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
 import plus.jdk.etcd.model.EtcdWatcherModel;
 import plus.jdk.etcd.model.KeyValuePair;
@@ -65,10 +67,17 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
             EtcdNode etcdNode = watcherModel.getEtcdNode();
             KeyValuePair<T> keyValuePair = etcdPlusService.getFirstKV(etcdNode.path(), watcherModel.getClazz()).get();
             watcherModel.setFieldValue(keyValuePair.getValue());
+            IEtcdNodePostProcessor processor = configurableApplicationContext.getBean(etcdNode.processor());
             Watch.Watcher watcher = etcdPlusService.watch(etcdNode.path(), (watchKey, event, keyValue, option, watchResponse) -> {
                 watcherModel.setFieldValue(keyValue.getValue());
                 log.info("type={}, key={}, value={}", event.getEventType().toString(), keyValue.getKey(), keyValue.getValue());
+                try{
+                    processor.postProcessOnChange(etcdNode, keyValue, event, watchResponse);
+                }catch (Exception | Error e) {
+                    e.printStackTrace();
+                }
             }, watcherModel.getClazz());
+            processor.postProcessOnInitialization(etcdNode, keyValuePair);
         } catch (Exception | Error e) {
             e.printStackTrace();
             log.error("distributeZKNodeDataForBeanField, msg:{}", e.getMessage());
