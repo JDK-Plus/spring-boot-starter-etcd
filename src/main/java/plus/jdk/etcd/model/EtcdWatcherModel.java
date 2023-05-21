@@ -32,7 +32,6 @@ public class EtcdWatcherModel<T> {
      */
     private Class<T> clazz;
 
-
     public void setFieldValue(Object value) {
         ReflectionUtils.makeAccessible(field);
         ReflectionUtils.setField(field, beanInstance, value);

@@ -10,7 +10,6 @@ import io.etcd.jetcd.shaded.com.google.common.base.Charsets;
 import io.etcd.jetcd.shaded.com.google.common.base.Function;
 import io.etcd.jetcd.watch.WatchEvent;
 import lombok.extern.slf4j.Slf4j;
-import plus.jdk.etcd.common.DefaultConfigAdaptor;
 import plus.jdk.etcd.common.IEventProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
 import plus.jdk.etcd.common.IConfigAdaptor;
@@ -19,11 +18,9 @@ import plus.jdk.etcd.model.KeyValuePair;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
-public class EtcdPlusService {
+public class EtcdClient {
 
     private final IConfigAdaptor configAdaptor;
 
@@ -31,7 +28,7 @@ public class EtcdPlusService {
 
     private final Client client;
 
-    public EtcdPlusService(IConfigAdaptor configAdaptor, EtcdPlusProperties properties) {
+    public EtcdClient(IConfigAdaptor configAdaptor, EtcdPlusProperties properties) {
         this.properties = properties;
         this.configAdaptor = configAdaptor;
         this.client = Client.builder()
@@ -50,10 +47,11 @@ public class EtcdPlusService {
                 String valueStr = event.getKeyValue().getValue().toString(StandardCharsets.UTF_8);
                 T data = configAdaptor.deserialize(valueStr, clazz);
                 KeyValuePair<T> keyValuePair = new KeyValuePair<T>(key, data, keyValue);
-                processor.process(key, event,  keyValuePair,  watchOpts, response);
-                log.info("type={}, key={}, value={}", event.getEventType().toString(),
-                        Optional.ofNullable(event.getKeyValue().getKey()).map(bs -> bs.toString(Charsets.UTF_8)).orElse(""),
-                        Optional.ofNullable(event.getKeyValue().getValue()).map(bs -> bs.toString(Charsets.UTF_8)).orElse(""));
+                try{
+                    processor.process(key, event,  keyValuePair,  watchOpts, response);
+                }catch (Exception | Error e) {
+                    log.error("event process failed, event:{}, keyValues:{}", event, keyValuePair);
+                }
             }
         });
         return watcher;
@@ -75,6 +73,7 @@ public class EtcdPlusService {
         GetOption getOption = GetOption.newBuilder()
                 .withSortField(GetOption.SortTarget.VERSION)
                 .withSortOrder(GetOption.SortOrder.DESCEND)
+                .withLimit(1)
                 .build();
         return this.get(key, clazz, getOption).thenApply((Function<List<KeyValuePair<T>>, KeyValuePair<T>>) keyValueDescs -> {
             if(keyValueDescs == null || keyValueDescs.isEmpty()) {
@@ -85,7 +84,6 @@ public class EtcdPlusService {
     }
 
     public <T> CompletableFuture<List<KeyValuePair<T>>> scanByPrefix(String prefix, Class<T> clazz) {
-        ByteSequence prefixSequence = ByteSequence.from(prefix, StandardCharsets.UTF_8);
         GetOption getOption = GetOption.newBuilder()
                 .isPrefix(true)
                 .build();
