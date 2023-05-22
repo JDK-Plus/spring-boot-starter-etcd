@@ -32,6 +32,18 @@ public class EtcdWatcherModel<T> {
      */
     private Class<T> clazz;
 
+    /**
+     * watch对象
+     */
+    private Watch.Watcher watcher;
+
+    public EtcdWatcherModel(EtcdNode etcdNode, Object beanInstance, Field field, Class<T> clazz) {
+        this.etcdNode = etcdNode;
+        this.beanInstance = beanInstance;
+        this.field = field;
+        this.clazz = clazz;
+    }
+
     public void setFieldValue(Object value) {
         ReflectionUtils.makeAccessible(field);
         ReflectionUtils.setField(field, beanInstance, value);
