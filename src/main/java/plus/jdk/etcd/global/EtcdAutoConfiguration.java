@@ -10,11 +10,7 @@ import plus.jdk.etcd.config.EtcdPlusProperties;
 @Slf4j
 @Configuration
 @EnableEtcdPlus
-@ConditionalOnProperty(prefix = "plus.jdk.etcd", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(EtcdPlusProperties.class)
 public class EtcdAutoConfiguration {
 
-    public EtcdAutoConfiguration(EtcdPlusProperties etcdPlusProperties) {
-        log.info("{}", etcdPlusProperties);
-    }
 }

@@ -12,11 +12,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class EtcdPlusProperties {
 
     /**
-     * 是否启动
-     */
-    private Boolean enabled = false;
-
-    /**
      * 用户名
      */
     private String userName;
