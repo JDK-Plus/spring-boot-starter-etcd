@@ -8,6 +8,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.annotation.Order;
 import plus.jdk.etcd.annotation.EtcdNode;
 import plus.jdk.etcd.common.IEtcdNodePostProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
@@ -15,7 +16,10 @@ import plus.jdk.etcd.model.EtcdWatcherModel;
 import plus.jdk.etcd.model.KeyValuePair;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
+
 
 @Slf4j
 public class EtcdNodeDelegateService implements BeanPostProcessor {
@@ -28,11 +32,11 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
 
     private final EtcdPlusProperties properties;
 
-    private final ThreadPoolExecutor threadPoolExecutor;
-
     private final BeanFactory beanFactory;
 
-    private Boolean started = false;
+    private List<EtcdWatcherModel<?>> watcherModels = new ArrayList<>();
+
+    private final ScheduledExecutorService scheduledExecutorService;
 
     public EtcdNodeDelegateService(BeanFactory beanFactory, ApplicationContext context,
                                    EtcdClient etcdClient, EtcdPlusProperties properties) {
@@ -41,9 +45,7 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
         this.etcdClient = etcdClient;
         this.properties = properties;
         this.beanFactory = beanFactory;
-        this.threadPoolExecutor = new ThreadPoolExecutor(properties.getWatcherCoreThreadPollSize(),
-                properties.getWatcherThreadPollMaxSize(), properties.getWatcherThreadKeepAliveTime(), TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(properties.getWatcherThreadPoolCapacity()));
+        this.scheduledExecutorService = Executors.newScheduledThreadPool(properties.getWatcherCoreThreadPollSize());
     }
 
     @Override
@@ -58,7 +60,8 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
             if (etcdNode == null) {
                 continue;
             }
-            EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<T>(etcdNode, bean, field, (Class<T>) field.getType());
+            EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<>(etcdNode, bean, field, (Class<T>) field.getType());
+            watcherModels.add(etcdWatcher);
             synchronizeDataFromEtcd(etcdWatcher);
         }
     }
@@ -69,7 +72,7 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
         IEtcdNodePostProcessor processor = beanFactory.getBean(etcdNode.processor());
         try {
             KeyValuePair<T> keyValuePair = etcdClient.getFirstKV(etcdNode.path(), watcherModel.getClazz()).get();
-            Watch.Watcher watcher = etcdClient.watch(etcdNode.path(), (watchKey, event, keyValue, option, watchResponse) -> {
+            try(Watch.Watcher watcher = etcdClient.watch(etcdNode.path(), (watchKey, event, keyValue, option, watchResponse) -> {
                 watcherModel.setFieldValue(keyValue.getValue());
                 log.info("type={}, key={}, value={}", event.getEventType().toString(), keyValue.getKey(), keyValue.getValue());
                 try{
@@ -77,9 +80,11 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
                 }catch (Exception | Error e) {
                     e.printStackTrace();
                 }
-            }, watcherModel.getClazz());
-            watcherModel.setFieldValue(keyValuePair.getValue());
-            processor.postProcessOnInitialization(etcdNode, keyValuePair);
+            }, watcherModel.getClazz())) {
+                watcherModel.setWatcher(watcher);
+                watcherModel.setFieldValue(keyValuePair.getValue());
+                processor.postProcessOnInitialization(etcdNode, keyValuePair);
+            }
         } catch (Exception | Error e) {
             e.printStackTrace();
             log.error("distributeZKNodeDataForBeanField, msg:{}", e.getMessage());

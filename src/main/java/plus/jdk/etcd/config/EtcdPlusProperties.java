@@ -35,16 +35,4 @@ public class EtcdPlusProperties {
      * watcher核心线程数
      */
     private int watcherCoreThreadPollSize = 10;
-
-    /**
-     * watcher最大线程数
-     */
-    private int watcherThreadPollMaxSize = 50;
-
-    /**
-     * watcher线程池最大任务长度
-     */
-    private int watcherThreadPoolCapacity = 100;
-
-    private int watcherThreadKeepAliveTime = 0;
 }
