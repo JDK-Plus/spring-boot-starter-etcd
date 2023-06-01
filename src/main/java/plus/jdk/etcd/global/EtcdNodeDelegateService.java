@@ -2,13 +2,13 @@ package plus.jdk.etcd.global;
 
 import io.etcd.jetcd.Watch;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.aop.framework.Advised;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.core.annotation.Order;
 import plus.jdk.etcd.annotation.EtcdNode;
 import plus.jdk.etcd.common.IEtcdNodePostProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
@@ -50,17 +50,29 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-        processBeanFields(bean, beanName);
+        Class<?> clazz = bean.getClass();
+        if(bean instanceof Advised) {
+            clazz = bean.getClass().getSuperclass();
+            Advised advised = (Advised) bean;
+            try {
+                Object rawBean = advised.getTargetSource().getTarget();
+                Class<?> rawClazz = bean.getClass().getSuperclass();
+                processBeanFields(rawBean, rawClazz, beanName);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+        processBeanFields(clazz, clazz, beanName);
         return bean;
     }
 
-    protected <T> void processBeanFields(Object bean, String beanName) {
-        for (Field field : bean.getClass().getDeclaredFields()) {
+    protected <T> void processBeanFields(Object bean, Class<T> clazz, String beanName) {
+        for (Field field : clazz.getDeclaredFields()) {
             EtcdNode etcdNode = field.getAnnotation(EtcdNode.class);
             if (etcdNode == null) {
                 continue;
             }
-            EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<>(etcdNode, bean, field, (Class<T>) field.getType());
+            EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<>(etcdNode, bean, field, (Class<T>) clazz);
             watcherModels.add(etcdWatcher);
             synchronizeDataFromEtcd(etcdWatcher);
         }

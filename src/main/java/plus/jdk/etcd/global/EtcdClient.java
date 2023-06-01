@@ -39,22 +39,24 @@ public class EtcdClient {
     }
 
     public <T> Watch.Watcher watch(String key, IEventProcessor<T> processor, Class<T> clazz) {
+        return this.watch(key, processor, clazz, WatchOption.DEFAULT);
+    }
+
+    public <T> Watch.Watcher watch(String key, IEventProcessor<T> processor, Class<T> clazz, WatchOption watchOption) {
         ByteSequence watchKey = ByteSequence.from(key, Charsets.UTF_8);
-        WatchOption watchOpts = WatchOption.newBuilder().build();
-        Watch.Watcher watcher = client.getWatchClient().watch(watchKey, watchOpts, response -> {
+        return client.getWatchClient().watch(watchKey, watchOption, response -> {
             for (WatchEvent event : response.getEvents()) {
                 KeyValue keyValue = event.getKeyValue();
                 String valueStr = event.getKeyValue().getValue().toString(StandardCharsets.UTF_8);
                 T data = configAdaptor.deserialize(valueStr, clazz);
                 KeyValuePair<T> keyValuePair = new KeyValuePair<T>(key, data, keyValue);
                 try{
-                    processor.process(key, event,  keyValuePair,  watchOpts, response);
+                    processor.process(key, event,  keyValuePair,  watchOption, response);
                 }catch (Exception | Error e) {
                     log.error("event process failed, event:{}, keyValues:{}", event, keyValuePair);
                 }
             }
         });
-        return watcher;
     }
 
     public <T> CompletableFuture<Boolean> put(String key, T value, PutOption putOption) {
