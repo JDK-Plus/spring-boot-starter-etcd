@@ -73,6 +73,15 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
                 continue;
             }
             EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<>(etcdNode, bean, field, (Class<T>) clazz);
+            scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+                @Override
+                public void run() {
+                    if(etcdWatcher.getWatcher() != null) {
+                        etcdWatcher.getWatcher().close();
+                    }
+                    synchronizeDataFromEtcd(etcdWatcher);
+                }
+            }, properties.getWatchNodeFixRate(), properties.getWatchNodeFixRate(), TimeUnit.SECONDS);
             watcherModels.add(etcdWatcher);
             synchronizeDataFromEtcd(etcdWatcher);
         }

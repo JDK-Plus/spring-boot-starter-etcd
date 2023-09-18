@@ -32,6 +32,11 @@ public class EtcdPlusProperties {
     private String[] endpoints;
 
     /**
+     * 每多少秒检查一下node监听状态，避免断开的情况
+     */
+    private Integer watchNodeFixRate = 5;
+
+    /**
      * watcher核心线程数
      */
     private int watcherCoreThreadPollSize = 10;

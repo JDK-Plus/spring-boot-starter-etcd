@@ -3,6 +3,11 @@ package plus.jdk.etcd.global;
 import io.etcd.jetcd.*;
 import io.etcd.jetcd.kv.GetResponse;
 import io.etcd.jetcd.kv.PutResponse;
+import io.etcd.jetcd.lease.LeaseGrantResponse;
+import io.etcd.jetcd.lease.LeaseKeepAliveResponse;
+import io.etcd.jetcd.lease.LeaseRevokeResponse;
+import io.etcd.jetcd.lock.LockResponse;
+import io.etcd.jetcd.lock.UnlockResponse;
 import io.etcd.jetcd.options.GetOption;
 import io.etcd.jetcd.options.PutOption;
 import io.etcd.jetcd.options.WatchOption;
@@ -18,6 +23,7 @@ import plus.jdk.etcd.model.KeyValuePair;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class EtcdClient {
@@ -117,5 +123,52 @@ public class EtcdClient {
              }
              return keyValues;
          });
+    }
+
+    public CompletableFuture<Long> leaseGrant(Long ttl, Long timeout, TimeUnit timeUnit) {
+        Lease lease = client.getLeaseClient();
+        return lease.grant(ttl, timeout, timeUnit).thenApply((Function<LeaseGrantResponse, Long>) leaseGrantResponse -> {
+            return leaseGrantResponse.getID();
+        });
+    }
+
+    public CompletableFuture<Long> leaseKeepAlive(Long ttl, Long timeout, TimeUnit timeUnit) {
+        Lease lease = client.getLeaseClient();
+        return lease.keepAliveOnce(ttl).thenApply(new Function<LeaseKeepAliveResponse, Long>() {
+            @Override
+            public Long apply(LeaseKeepAliveResponse leaseKeepAliveResponse) {
+                return leaseKeepAliveResponse.getID();
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> leaseRevoke(Long leaseId) {
+        Lease lease = client.getLeaseClient();
+        return lease.revoke(leaseId).thenApply(new Function<LeaseRevokeResponse, Boolean>() {
+            @Override
+            public Boolean apply(LeaseRevokeResponse leaseRevokeResponse) {
+                return leaseRevokeResponse.getHeader() != null;
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> lock(String path, Long leaseId) {
+        Lock lock = client.getLockClient();
+        return lock.lock(ByteSequence.from(path.getBytes()), leaseId).thenApply(new Function<LockResponse, Boolean>() {
+            @Override
+            public Boolean apply(LockResponse lockResponse) {
+                return lockResponse.getHeader() != null;
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> unlock(String path, Long leaseId) {
+        Lock lock = client.getLockClient();
+        return lock.unlock(ByteSequence.from(path.getBytes())).thenApply(new Function<UnlockResponse, Boolean>() {
+            @Override
+            public Boolean apply(UnlockResponse unlockResponse) {
+                return unlockResponse.getHeader() != null;
+            }
+        });
     }
 }
