@@ -1,13 +1,19 @@
 package plus.jdk.etcd.global;
 
 import io.etcd.jetcd.*;
+import io.etcd.jetcd.kv.DeleteResponse;
 import io.etcd.jetcd.kv.GetResponse;
 import io.etcd.jetcd.kv.PutResponse;
+import io.etcd.jetcd.kv.TxnResponse;
 import io.etcd.jetcd.lease.LeaseGrantResponse;
 import io.etcd.jetcd.lease.LeaseKeepAliveResponse;
 import io.etcd.jetcd.lease.LeaseRevokeResponse;
 import io.etcd.jetcd.lock.LockResponse;
 import io.etcd.jetcd.lock.UnlockResponse;
+import io.etcd.jetcd.op.Cmp;
+import io.etcd.jetcd.op.CmpTarget;
+import io.etcd.jetcd.op.Op;
+import io.etcd.jetcd.options.DeleteOption;
 import io.etcd.jetcd.options.GetOption;
 import io.etcd.jetcd.options.PutOption;
 import io.etcd.jetcd.options.WatchOption;
@@ -23,7 +29,9 @@ import plus.jdk.etcd.model.KeyValuePair;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Slf4j
 public class EtcdClient {
@@ -56,25 +64,42 @@ public class EtcdClient {
                 String valueStr = event.getKeyValue().getValue().toString(StandardCharsets.UTF_8);
                 T data = configAdaptor.deserialize(valueStr, clazz);
                 KeyValuePair<T> keyValuePair = new KeyValuePair<T>(key, data, keyValue);
-                try{
-                    processor.process(key, event,  keyValuePair,  watchOption, response);
-                }catch (Exception | Error e) {
+                try {
+                    processor.process(key, event, keyValuePair, watchOption, response);
+                } catch (Exception | Error e) {
                     log.error("event process failed, event:{}, keyValues:{}", event, keyValuePair);
                 }
             }
         });
     }
 
-    public <T> CompletableFuture<Boolean> put(String key, T value, PutOption putOption) {
+    public <T> CompletableFuture<TxnResponse> put(String key, T value, Long expire) throws ExecutionException, InterruptedException {
+        PutOption.Builder optionBuilder = PutOption.newBuilder();
+        long leaseId = leaseGrant(expire).get();
+        optionBuilder.withLeaseId(leaseId);
         KV kvClient = client.getKVClient();
         ByteSequence keyBytes = ByteSequence.from(key.getBytes());
         ByteSequence valueBytes = ByteSequence.from(configAdaptor.serialize(value).getBytes());
-        return kvClient.put(keyBytes, valueBytes, putOption).thenApply((Function<PutResponse, Boolean>) putResponse -> {
-            if(putResponse == null) {
-                return false;
-            }
-            return putResponse.getHeader().getRevision() > 0;
-        });
+        Cmp cmp = new Cmp(keyBytes, Cmp.Op.GREATER, CmpTarget.version(0));
+        return kvClient.txn()
+                .Then(Op.put(keyBytes, valueBytes, optionBuilder.build()))
+                .commit();
+    }
+
+    public <T> CompletableFuture<TxnResponse> put(String key, T value, PutOption putOption) {
+        KV kvClient = client.getKVClient();
+        ByteSequence keyBytes = ByteSequence.from(key.getBytes());
+        ByteSequence valueBytes = ByteSequence.from(configAdaptor.serialize(value).getBytes());
+        Cmp cmp = new Cmp(keyBytes, Cmp.Op.GREATER, CmpTarget.version(0));
+        return kvClient.txn()
+                .Then(Op.put(keyBytes, valueBytes, putOption))
+                .commit();
+    }
+
+    public <T> CompletableFuture<DeleteResponse> delete(String key) {
+        KV kvClient = client.getKVClient();
+        ByteSequence keyBytes = ByteSequence.from(key.getBytes());
+        return kvClient.delete(keyBytes);
     }
 
     public <T> CompletableFuture<KeyValuePair<T>> getFirstKV(String key, Class<T> clazz) {
@@ -84,7 +109,7 @@ public class EtcdClient {
                 .withLimit(1)
                 .build();
         return this.get(key, clazz, getOption).thenApply((Function<List<KeyValuePair<T>>, KeyValuePair<T>>) keyValueDescs -> {
-            if(keyValueDescs == null || keyValueDescs.isEmpty()) {
+            if (keyValueDescs == null || keyValueDescs.isEmpty()) {
                 return null;
             }
             return keyValueDescs.get(0);
@@ -103,31 +128,38 @@ public class EtcdClient {
         ByteSequence keyBytes = ByteSequence.from(key.getBytes());
         return kvClient.get(keyBytes, getOption).thenApply((Function<GetResponse, List<KeyValuePair<T>>>) getResponse -> {
             List<KeyValuePair<T>> keyValues = new ArrayList<>();
-            if(getResponse == null) {
-                 return keyValues;
-             }
-             List<KeyValue> keyValueList = getResponse.getKvs();
-             if(keyValueList == null) {
-                 return keyValues;
-             }
-             for(KeyValue keyValue:keyValueList) {
-                 String keyStr = keyValue.getKey().toString(StandardCharsets.UTF_8);
-                 String valueStr = keyValue.getValue().toString(StandardCharsets.UTF_8);
-                 T value = null;
-                 try{
-                     value = configAdaptor.deserialize(valueStr, clazz);
-                 }catch (Exception e) {
-                     log.error("deserialize data failed, key:{}, value:{}, clazz:{}", keyStr, valueStr, clazz.getName());
-                 }
-                 keyValues.add(new KeyValuePair<>(keyStr, value, keyValue));
-             }
-             return keyValues;
-         });
+            if (getResponse == null) {
+                return keyValues;
+            }
+            List<KeyValue> keyValueList = getResponse.getKvs();
+            if (keyValueList == null) {
+                return keyValues;
+            }
+            for (KeyValue keyValue : keyValueList) {
+                String keyStr = keyValue.getKey().toString(StandardCharsets.UTF_8);
+                String valueStr = keyValue.getValue().toString(StandardCharsets.UTF_8);
+                T value = null;
+                try {
+                    value = configAdaptor.deserialize(valueStr, clazz);
+                } catch (Exception e) {
+                    log.error("deserialize data failed, key:{}, value:{}, clazz:{}", keyStr, valueStr, clazz.getName());
+                }
+                keyValues.add(new KeyValuePair<>(keyStr, value, keyValue));
+            }
+            return keyValues;
+        });
     }
 
     public CompletableFuture<Long> leaseGrant(Long ttl, Long timeout, TimeUnit timeUnit) {
         Lease lease = client.getLeaseClient();
         return lease.grant(ttl, timeout, timeUnit).thenApply((Function<LeaseGrantResponse, Long>) leaseGrantResponse -> {
+            return leaseGrantResponse.getID();
+        });
+    }
+
+    public CompletableFuture<Long> leaseGrant(Long ttl) {
+        Lease lease = client.getLeaseClient();
+        return lease.grant(ttl).thenApply((Function<LeaseGrantResponse, Long>) leaseGrantResponse -> {
             return leaseGrantResponse.getID();
         });
     }
