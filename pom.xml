@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>plus.jdk</groupId>
     <artifactId>spring-boot-starter-etcd</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
     <name>spring-boot-starter-etcd</name>
 
     <description>spring-boot-starter-etcd</description>

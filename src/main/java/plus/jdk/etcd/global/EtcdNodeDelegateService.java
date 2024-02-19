@@ -9,6 +9,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.Environment;
 import plus.jdk.etcd.annotation.EtcdNode;
 import plus.jdk.etcd.common.IEtcdNodePostProcessor;
 import plus.jdk.etcd.config.EtcdPlusProperties;
@@ -89,7 +90,12 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
         EtcdNode etcdNode = watcherModel.getEtcdNode();
         IEtcdNodePostProcessor processor = beanFactory.getBean(etcdNode.processor());
         try {
-            KeyValuePair<T> keyValuePair = etcdClient.getFirstKV(etcdNode.path(), watcherModel.getClazz()).get();
+            Environment environment = configurableApplicationContext.getEnvironment();
+            String address = etcdNode.path();
+            if (address.startsWith("${") && address.endsWith("}")) {
+                address = environment.getProperty(address.substring(2, address.length() - 1));
+            }
+            KeyValuePair<T> keyValuePair = etcdClient.getFirstKV(address, watcherModel.getClazz()).get();
             try(Watch.Watcher watcher = etcdClient.watch(etcdNode.path(), (watchKey, event, keyValue, option, watchResponse) -> {
                 watcherModel.setFieldValue(keyValue.getValue());
                 log.info("type={}, key={}, value={}", event.getEventType().toString(), keyValue.getKey(), keyValue.getValue());
