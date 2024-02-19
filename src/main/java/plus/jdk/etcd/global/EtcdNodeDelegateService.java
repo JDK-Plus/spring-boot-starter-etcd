@@ -62,7 +62,7 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
                 throw new RuntimeException(e);
             }
         }
-        processBeanFields(clazz, clazz, beanName);
+        processBeanFields(bean, clazz, beanName);
         return bean;
     }
 
@@ -72,15 +72,12 @@ public class EtcdNodeDelegateService implements BeanPostProcessor {
             if (etcdNode == null) {
                 continue;
             }
-            EtcdWatcherModel<T> etcdWatcher = new EtcdWatcherModel<>(etcdNode, bean, field, (Class<T>) clazz);
-            scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    if(etcdWatcher.getWatcher() != null) {
-                        etcdWatcher.getWatcher().close();
-                    }
-                    synchronizeDataFromEtcd(etcdWatcher);
+            EtcdWatcherModel<T> etcdWatcher = (EtcdWatcherModel<T>) new EtcdWatcherModel<>(etcdNode, bean, field, field.getType());
+            scheduledExecutorService.scheduleAtFixedRate(() -> {
+                if(etcdWatcher.getWatcher() != null) {
+                    etcdWatcher.getWatcher().close();
                 }
+                synchronizeDataFromEtcd(etcdWatcher);
             }, properties.getWatchNodeFixRate(), properties.getWatchNodeFixRate(), TimeUnit.SECONDS);
             watcherModels.add(etcdWatcher);
             synchronizeDataFromEtcd(etcdWatcher);
